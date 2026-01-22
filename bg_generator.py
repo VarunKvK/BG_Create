@@ -105,7 +105,8 @@ def create_word_document(bg_text, output_file):
 def generate_bg_documents(input_file, output_dir='BG_Documents'):
     """
     Main function to generate Word documents from BGs text file
-    Skips BGs that have already been processed
+    Skips BGs that have already been processed (identified by content hash)
+    Uses hash as filename so same BG always has same filename regardless of order
     """
     # Create output directory
     Path(output_dir).mkdir(exist_ok=True)
@@ -123,15 +124,16 @@ def generate_bg_documents(input_file, output_dir='BG_Documents'):
     # Identify new BGs
     new_bgs = []
     skipped_count = 0
+    next_index = len(processed_bgs) + 1  # Get next available index
     
-    for idx, bg in enumerate(bgs, 1):
+    for bg in bgs:
         bg_hash = get_bg_hash(bg)
         
         if bg_hash in processed_bgs:
             skipped_count += 1
             continue
         
-        new_bgs.append((idx, bg, bg_hash))
+        new_bgs.append((bg, bg_hash))
     
     if skipped_count > 0:
         print(f"⏭️  Skipped {skipped_count} already processed BG(s)")
@@ -143,15 +145,16 @@ def generate_bg_documents(input_file, output_dir='BG_Documents'):
     print(f"\n📄 Generating {len(new_bgs)} new Word document(s)...\n")
     
     # Generate only new documents
-    for idx, bg, bg_hash in new_bgs:
-        filename = os.path.join(output_dir, f"BG_{idx:03d}.docx")
+    for bg, bg_hash in new_bgs:
+        filename = os.path.join(output_dir, f"BG_{next_index:03d}.docx")
         try:
             create_word_document(bg, filename)
             processed_bgs[bg_hash] = {
-                "filename": f"BG_{idx:03d}.docx",
-                "generated_at": str(Path(filename).stat().st_mtime)
+                "filename": f"BG_{next_index:03d}.docx",
+                "hash": bg_hash
             }
             print(f"✓ Created: {filename}")
+            next_index += 1
         except Exception as e:
             print(f"❌ Error creating {filename}: {str(e)}")
     
