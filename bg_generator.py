@@ -1,14 +1,41 @@
 """
 Bulk BG Document Generator
 Converts multiple BGs from a text file into individual Word documents
+Tracks processed BGs to avoid regenerating duplicates
 """
 
 import os
 import re
+import json
+import hashlib
 from pathlib import Path
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+
+def get_bg_hash(bg_text):
+    """Generate a hash for a BG text to track if it's been processed"""
+    return hashlib.md5(bg_text.encode()).hexdigest()
+
+
+def load_processed_bgs(output_dir):
+    """Load the list of already processed BGs from tracking file"""
+    tracking_file = os.path.join(output_dir, '.bg_tracker.json')
+    if os.path.exists(tracking_file):
+        try:
+            with open(tracking_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+
+def save_processed_bgs(processed_bgs, output_dir):
+    """Save the list of processed BGs to tracking file"""
+    tracking_file = os.path.join(output_dir, '.bg_tracker.json')
+    with open(tracking_file, 'w', encoding='utf-8') as f:
+        json.dump(processed_bgs, f, indent=2)
 
 
 def parse_bgs_from_file(file_path):
@@ -78,9 +105,13 @@ def create_word_document(bg_text, output_file):
 def generate_bg_documents(input_file, output_dir='BG_Documents'):
     """
     Main function to generate Word documents from BGs text file
+    Skips BGs that have already been processed
     """
     # Create output directory
     Path(output_dir).mkdir(exist_ok=True)
+    
+    # Load previously processed BGs
+    processed_bgs = load_processed_bgs(output_dir)
     
     # Parse BGs
     bgs = parse_bgs_from_file(input_file)
@@ -89,24 +120,52 @@ def generate_bg_documents(input_file, output_dir='BG_Documents'):
         print("❌ No BGs found in the file!")
         return
     
-    print(f"\n📄 Generating {len(bgs)} Word documents...\n")
+    # Identify new BGs
+    new_bgs = []
+    skipped_count = 0
     
-    # Generate documents
     for idx, bg in enumerate(bgs, 1):
-        filename = f"{output_dir}/BG_{idx:03d}.docx"
+        bg_hash = get_bg_hash(bg)
+        
+        if bg_hash in processed_bgs:
+            skipped_count += 1
+            continue
+        
+        new_bgs.append((idx, bg, bg_hash))
+    
+    if skipped_count > 0:
+        print(f"⏭️  Skipped {skipped_count} already processed BG(s)")
+    
+    if not new_bgs:
+        print("✅ All BGs have already been processed! No new documents to generate.")
+        return
+    
+    print(f"\n📄 Generating {len(new_bgs)} new Word document(s)...\n")
+    
+    # Generate only new documents
+    for idx, bg, bg_hash in new_bgs:
+        filename = os.path.join(output_dir, f"BG_{idx:03d}.docx")
         try:
             create_word_document(bg, filename)
+            processed_bgs[bg_hash] = {
+                "filename": f"BG_{idx:03d}.docx",
+                "generated_at": str(Path(filename).stat().st_mtime)
+            }
             print(f"✓ Created: {filename}")
         except Exception as e:
             print(f"❌ Error creating {filename}: {str(e)}")
     
-    print(f"\n✅ Done! Generated {len(bgs)} documents in '{output_dir}' folder")
+    # Save updated tracking
+    save_processed_bgs(processed_bgs, output_dir)
+    
+    total_count = len(processed_bgs)
+    print(f"\n✅ Done! Total {total_count} document(s) in '{output_dir}' folder")
 
 
 if __name__ == "__main__":
     # Configuration
     INPUT_FILE = "bgs_input.txt"  # Your text file with all BGs
-    OUTPUT_DIR = "BG_Documents"
+    OUTPUT_DIR = r"C:\Users\KRISHNAN VARUN\OneDrive\Desktop\Impact_BGs"
     
     if not os.path.exists(INPUT_FILE):
         print(f"❌ Error: '{INPUT_FILE}' not found!")
